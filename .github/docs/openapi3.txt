@@ -1704,6 +1704,7 @@ type Schema struct {
 
 	// OpenAPI 3.1 / JSON Schema 2020-12 fields
 	Const                 any        `json:"const,omitempty" yaml:"const,omitempty"`
+	ConstIsSet            bool       `json:"-" yaml:"-"`
 	Examples              []any      `json:"examples,omitempty" yaml:"examples,omitempty"`
 	PrefixItems           SchemaRefs `json:"prefixItems,omitempty" yaml:"prefixItems,omitempty"`
 	Contains              *SchemaRef `json:"contains,omitempty" yaml:"contains,omitempty"`
