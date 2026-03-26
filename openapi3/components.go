@@ -15,6 +15,7 @@ type (
 	Headers         map[string]*HeaderRef
 	Links           map[string]*LinkRef
 	ParametersMap   map[string]*ParameterRef
+	PathItems       map[string]*PathItem
 	RequestBodies   map[string]*RequestBodyRef
 	ResponseBodies  map[string]*ResponseRef
 	Schemas         map[string]*SchemaRef
@@ -27,16 +28,16 @@ type Components struct {
 	Extensions map[string]any `json:"-" yaml:"-"`
 	Origin     *Origin        `json:"__origin__,omitempty" yaml:"__origin__,omitempty"`
 
-	Schemas         Schemas              `json:"schemas,omitempty" yaml:"schemas,omitempty"`
-	Parameters      ParametersMap        `json:"parameters,omitempty" yaml:"parameters,omitempty"`
-	Headers         Headers              `json:"headers,omitempty" yaml:"headers,omitempty"`
-	RequestBodies   RequestBodies        `json:"requestBodies,omitempty" yaml:"requestBodies,omitempty"`
-	Responses       ResponseBodies       `json:"responses,omitempty" yaml:"responses,omitempty"`
-	SecuritySchemes SecuritySchemes      `json:"securitySchemes,omitempty" yaml:"securitySchemes,omitempty"`
-	Examples        Examples             `json:"examples,omitempty" yaml:"examples,omitempty"`
-	Links           Links                `json:"links,omitempty" yaml:"links,omitempty"`
-	Callbacks       Callbacks            `json:"callbacks,omitempty" yaml:"callbacks,omitempty"`
-	PathItems       map[string]*PathItem `json:"pathItems,omitempty" yaml:"pathItems,omitempty"`
+	Schemas         Schemas         `json:"schemas,omitempty" yaml:"schemas,omitempty"`
+	Parameters      ParametersMap   `json:"parameters,omitempty" yaml:"parameters,omitempty"`
+	Headers         Headers         `json:"headers,omitempty" yaml:"headers,omitempty"`
+	RequestBodies   RequestBodies   `json:"requestBodies,omitempty" yaml:"requestBodies,omitempty"`
+	Responses       ResponseBodies  `json:"responses,omitempty" yaml:"responses,omitempty"`
+	SecuritySchemes SecuritySchemes `json:"securitySchemes,omitempty" yaml:"securitySchemes,omitempty"`
+	Examples        Examples        `json:"examples,omitempty" yaml:"examples,omitempty"`
+	Links           Links           `json:"links,omitempty" yaml:"links,omitempty"`
+	Callbacks       Callbacks       `json:"callbacks,omitempty" yaml:"callbacks,omitempty"`
+	PathItems       PathItems       `json:"pathItems,omitempty" yaml:"pathItems,omitempty"`
 }
 
 func NewComponents() Components {
@@ -388,5 +389,18 @@ func (m Callbacks) JSONLookup(token string) (any, error) {
 		return &Ref{Ref: ref}, nil
 	} else {
 		return v.Value, nil
+	}
+}
+
+var _ jsonpointer.JSONPointable = (*PathItems)(nil)
+
+// JSONLookup implements https://pkg.go.dev/github.com/go-openapi/jsonpointer#JSONPointable
+func (m PathItems) JSONLookup(token string) (any, error) {
+	if v, ok := m[token]; !ok || v == nil {
+		return nil, fmt.Errorf("no path item %q", token)
+	} else if ref := v.Ref; ref != "" {
+		return &Ref{Ref: ref}, nil
+	} else {
+		return v, nil
 	}
 }
