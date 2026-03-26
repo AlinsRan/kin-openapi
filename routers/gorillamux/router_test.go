@@ -502,6 +502,28 @@ func newServerWithVariables(url string, variables map[string]string) *openapi3.S
 	}
 }
 
+func TestRouterComponentsPathItems(t *testing.T) {
+	loader := openapi3.NewLoader()
+	doc, err := loader.LoadFromFile("../../openapi3/testdata/components-path-items.yml")
+	require.NoError(t, err)
+	err = doc.Validate(context.Background())
+	require.NoError(t, err)
+
+	router, err := NewRouter(doc)
+	require.NoError(t, err)
+
+	// GET /things
+	req, err := http.NewRequest(http.MethodGet, "/things", nil)
+	require.NoError(t, err)
+	route, pathParams, err := router.FindRoute(req)
+	require.NoError(t, err)
+	require.NotNil(t, route)
+	assert.Equal(t, "/things", route.Path)
+	require.NotNil(t, route.Operation)
+	assert.Equal(t, "getThings", route.Operation.OperationID)
+	_ = pathParams
+}
+
 func newServerVariable(defaultValue string) *openapi3.ServerVariable {
 	return &openapi3.ServerVariable{
 		Enum:        nil,

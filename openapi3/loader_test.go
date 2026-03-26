@@ -667,6 +667,30 @@ paths:
 	require.NoError(t, err)
 }
 
+func TestLoadComponentsPathItems(t *testing.T) {
+	loader := NewLoader()
+	doc, err := loader.LoadFromFile("testdata/components-path-items.yml")
+	require.NoError(t, err)
+	require.NotNil(t, doc.Components)
+	require.NotNil(t, doc.Components.PathItems)
+
+	item, ok := doc.Components.PathItems["MyItem"]
+	require.True(t, ok, "components.pathItems should have 'MyItem'")
+	require.NotNil(t, item)
+	require.NotNil(t, item.Get, "MyItem should have a GET operation")
+	require.Equal(t, "getThings", item.Get.OperationID)
+
+	// Test that the path ref was resolved: /things should have ops from MyItem
+	pathItem := doc.Paths.Value("/things")
+	require.NotNil(t, pathItem, "paths should have '/things'")
+	require.NotNil(t, pathItem.Get, "/things should have a GET operation after ref resolution")
+	require.Equal(t, "getThings", pathItem.Get.OperationID)
+
+	// Validate the document
+	err = doc.Validate(loader.Context)
+	require.NoError(t, err)
+}
+
 func TestReadFromIoReader_Nil(t *testing.T) {
 	loader := NewLoader()
 	_, err := loader.LoadFromIoReader(nil)

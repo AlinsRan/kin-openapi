@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -566,4 +567,48 @@ paths:
 		},
 	})
 	require.Error(t, err)
+}
+
+func TestValidateRequestComponentsPathItems(t *testing.T) {
+	loader := openapi3.NewLoader()
+	doc, err := loader.LoadFromFile("../openapi3/testdata/components-path-items.yml")
+	require.NoError(t, err)
+	err = doc.Validate(context.Background())
+	require.NoError(t, err)
+
+	router, err := gorillamux.NewRouter(doc)
+	require.NoError(t, err)
+
+	// Valid POST /things
+	body := `{"name": "widget"}`
+	req, err := http.NewRequest(http.MethodPost, "/things", strings.NewReader(body))
+	require.NoError(t, err)
+	req.Header.Set("Content-Type", "application/json")
+
+	route, pathParams, err := router.FindRoute(req)
+	require.NoError(t, err)
+
+	input := &RequestValidationInput{
+		Request:    req,
+		PathParams: pathParams,
+		Route:      route,
+	}
+	err = ValidateRequest(context.Background(), input)
+	require.NoError(t, err, "valid POST /things should pass validation")
+
+	// Invalid body (not valid JSON)
+	req2, err := http.NewRequest(http.MethodPost, "/things", strings.NewReader(`not valid json`))
+	require.NoError(t, err)
+	req2.Header.Set("Content-Type", "application/json")
+
+	route2, pathParams2, err := router.FindRoute(req2)
+	require.NoError(t, err)
+
+	input2 := &RequestValidationInput{
+		Request:    req2,
+		PathParams: pathParams2,
+		Route:      route2,
+	}
+	err = ValidateRequest(context.Background(), input2)
+	require.Error(t, err, "invalid JSON body should fail validation")
 }
