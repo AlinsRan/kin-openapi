@@ -9,15 +9,12 @@ import (
 	"github.com/santhosh-tekuri/jsonschema/v6"
 )
 
-// jsonSchemaValidator wraps the santhosh-tekuri/jsonschema validator
 type jsonSchemaValidator struct {
 	compiler *jsonschema.Compiler
 	schema   *jsonschema.Schema
 }
 
-// newJSONSchemaValidator creates a new validator using JSON Schema 2020-12
 func newJSONSchemaValidator(schema *Schema) (*jsonSchemaValidator, error) {
-	// Convert OpenAPI Schema to JSON Schema format
 	schemaBytes, err := json.Marshal(schema)
 	if err != nil {
 		return nil, fmt.Errorf("failed to marshal schema: %w", err)
@@ -28,20 +25,16 @@ func newJSONSchemaValidator(schema *Schema) (*jsonSchemaValidator, error) {
 		return nil, fmt.Errorf("failed to unmarshal schema: %w", err)
 	}
 
-	// OpenAPI 3.1 specific transformations
 	transformOpenAPIToJSONSchema(schemaMap)
 
-	// Create compiler
 	compiler := jsonschema.NewCompiler()
 	compiler.DefaultDraft(jsonschema.Draft2020)
 
-	// Add the schema
 	schemaURL := "https://example.com/schema.json"
 	if err := compiler.AddResource(schemaURL, schemaMap); err != nil {
 		return nil, fmt.Errorf("failed to add schema resource: %w", err)
 	}
 
-	// Compile the schema
 	compiledSchema, err := compiler.Compile(schemaURL)
 	if err != nil {
 		return nil, fmt.Errorf("failed to compile schema: %w", err)
@@ -59,11 +52,11 @@ func transformOpenAPIToJSONSchema(schema map[string]any) {
 	// In OpenAPI 3.1 / JSON Schema 2020-12, we use type arrays
 	if nullable, ok := schema["nullable"].(bool); ok && nullable {
 		if typeVal, ok := schema["type"].(string); ok {
-			// Convert to type array with null
-			schema["type"] = []string{typeVal, "null"}
+			// Convert to type array with null (must be []any for jsonschema compiler)
+			schema["type"] = []any{typeVal, "null"}
 		} else if _, hasType := schema["type"]; !hasType {
 			// nullable: true without type - add "null" to allow null values
-			schema["type"] = []string{"null"}
+			schema["type"] = []any{"null"}
 		}
 		delete(schema, "nullable")
 	}
@@ -201,7 +194,6 @@ func formatValidationError(verr *jsonschema.ValidationError, parentPath string) 
 func (schema *Schema) visitJSONWithJSONSchema(settings *schemaValidationSettings, value any) error {
 	validator, err := newJSONSchemaValidator(schema)
 	if err != nil {
-		// Fall back to built-in validator if compilation fails
 		return schema.visitJSON(settings, value)
 	}
 

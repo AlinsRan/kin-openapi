@@ -48,6 +48,9 @@ type Loader struct {
 	visitedRefs map[string]struct{}
 	visitedPath []string
 	backtrack   map[string][]func(value any)
+
+	anchorIndex        map[string]*Schema
+	dynamicAnchorIndex map[string]*Schema
 }
 
 // NewLoader returns an empty Loader
@@ -379,6 +382,14 @@ func (loader *Loader) resolveComponent(doc *T, ref string, path *url.URL, resolv
 		fragment = "/"
 	}
 	if fragment[0] != '/' {
+		if loader.anchorIndex != nil {
+			if schema, ok := loader.anchorIndex[fragment]; ok {
+				if sr, ok := resolved.(*SchemaRef); ok {
+					sr.Value = schema
+					return componentDoc, componentPath, nil
+				}
+			}
+		}
 		return nil, nil, fmt.Errorf("expected fragment prefix '#/' in URI %q", ref)
 	}
 
@@ -937,11 +948,30 @@ func (loader *Loader) resolveSchemaRef(doc *T, component *SchemaRef, documentPat
 			component.Value = resolved.Value
 			component.setRefPath(resolved.RefPath())
 		}
+
+		if siblings := component.extraSibling; len(siblings) > 0 && component.Value != nil && doc.IsOpenAPI3_1() {
+			component.Value = mergeSiblingFields(component.Value, siblings)
+		}
+
 		defer loader.unvisitRef(ref, component.Value)
 	}
 	value := component.Value
 	if value == nil {
 		return nil
+	}
+
+	if value.Anchor != "" {
+		if loader.anchorIndex == nil {
+			loader.anchorIndex = make(map[string]*Schema)
+		}
+		loader.anchorIndex[value.Anchor] = value
+	}
+
+	if value.DynamicAnchor != "" {
+		if loader.dynamicAnchorIndex == nil {
+			loader.dynamicAnchorIndex = make(map[string]*Schema)
+		}
+		loader.dynamicAnchorIndex[value.DynamicAnchor] = value
 	}
 
 	// ResolveRefs referred schemas
@@ -1064,6 +1094,47 @@ func (loader *Loader) resolveSchemaRef(doc *T, component *SchemaRef, documentPat
 	}
 
 	return nil
+}
+
+func mergeSiblingFields(base *Schema, siblings map[string]any) *Schema {
+	merged := *base
+	for k, v := range siblings {
+		switch k {
+		case "description":
+			if s, ok := v.(string); ok {
+				merged.Description = s
+			}
+		case "title":
+			if s, ok := v.(string); ok {
+				merged.Title = s
+			}
+		case "default":
+			merged.Default = v
+		case "readOnly":
+			if b, ok := v.(bool); ok {
+				merged.ReadOnly = b
+			}
+		case "writeOnly":
+			if b, ok := v.(bool); ok {
+				merged.WriteOnly = b
+			}
+		case "deprecated":
+			if b, ok := v.(bool); ok {
+				merged.Deprecated = b
+			}
+		case "example":
+			merged.Example = v
+		case "examples":
+			if arr, ok := v.([]any); ok {
+				merged.Examples = arr
+			}
+		case "nullable":
+			if b, ok := v.(bool); ok {
+				merged.Nullable = b
+			}
+		}
+	}
+	return &merged
 }
 
 func (loader *Loader) resolveSecuritySchemeRef(doc *T, component *SecuritySchemeRef, documentPath *url.URL) (err error) {

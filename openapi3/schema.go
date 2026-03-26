@@ -9,6 +9,7 @@ import (
 	"math"
 	"math/big"
 	"reflect"
+	"regexp"
 	"sort"
 	"strconv"
 	"strings"
@@ -137,6 +138,7 @@ type Schema struct {
 
 	// OpenAPI 3.1 / JSON Schema 2020-12 fields
 	Const                 any        `json:"const,omitempty" yaml:"const,omitempty"`
+	ConstIsSet            bool       `json:"-" yaml:"-"`
 	Examples              []any      `json:"examples,omitempty" yaml:"examples,omitempty"`
 	PrefixItems           SchemaRefs `json:"prefixItems,omitempty" yaml:"prefixItems,omitempty"`
 	Contains              *SchemaRef `json:"contains,omitempty" yaml:"contains,omitempty"`
@@ -790,6 +792,14 @@ func (schema *Schema) UnmarshalJSON(data []byte) error {
 	}
 
 	*schema = Schema(x)
+
+	// Detect "const" presence in raw JSON to distinguish "const: null" from "no const"
+	var rawFields map[string]json.RawMessage
+	if err := json.Unmarshal(data, &rawFields); err == nil {
+		if _, hasConst := rawFields["const"]; hasConst {
+			schema.ConstIsSet = true
+		}
+	}
 
 	for i, v := range schema.Enum {
 		schema.Enum[i] = stripOriginFromAny(v)
@@ -1928,7 +1938,7 @@ func (schema *Schema) visitEnumOperation(settings *schemaValidationSettings, val
 }
 
 func (schema *Schema) visitConstOperation(settings *schemaValidationSettings, value any) (err error) {
-	if schema.Const == nil {
+	if !schema.ConstIsSet && schema.Const == nil {
 		return
 	}
 	var match bool
@@ -2231,11 +2241,11 @@ func (schema *Schema) visitJSONNumber(settings *schemaValidationSettings, value 
 		return schema.expectedType(settings, value)
 	}
 
-	// formats
+	// formats — in JSON Schema 2020-12, format is annotation-only (not enforced)
 	var formatStrErr string
 	var formatErr error
 	format := schema.Format
-	if format != "" {
+	if format != "" && !settings.useJSONSchema2020 {
 		if requireInteger {
 			// Check per-validation validators first, then fall back to global
 			f, ok := settings.integerFormats[format]
@@ -2517,10 +2527,10 @@ func (schema *Schema) visitJSONString(settings *schemaValidationSettings, value 
 		}
 	}
 
-	// "format"
+	// "format" — in JSON Schema 2020-12, format is annotation-only
 	var formatStrErr string
 	var formatErr error
-	if format := schema.Format; format != "" {
+	if format := schema.Format; format != "" && !settings.useJSONSchema2020 {
 		// Check per-validation validators first, then fall back to global
 		f, ok := settings.stringFormats[format]
 		if !ok {
@@ -2634,8 +2644,45 @@ func (schema *Schema) visitJSONArray(settings *schemaValidationSettings, value [
 		me = append(me, err)
 	}
 
-	// "items"
-	if itemSchemaRef := schema.Items; itemSchemaRef != nil {
+	// "prefixItems" + "items"
+	prefixLen := len(schema.PrefixItems)
+	if prefixLen > 0 {
+		for i, item := range value {
+			if i < prefixLen {
+				piRef := schema.PrefixItems[i]
+				if piRef == nil || piRef.Value == nil {
+					continue
+				}
+				if err := piRef.Value.visitJSON(settings, item); err != nil {
+					err = markSchemaErrorIndex(err, i)
+					if !settings.multiError {
+						return err
+					}
+					if itemMe, ok := err.(MultiError); ok {
+						me = append(me, itemMe...)
+					} else {
+						me = append(me, err)
+					}
+				}
+			} else if itemSchemaRef := schema.Items; itemSchemaRef != nil {
+				itemSchema := itemSchemaRef.Value
+				if itemSchema == nil {
+					return foundUnresolvedRef(itemSchemaRef.Ref)
+				}
+				if err := itemSchema.visitJSON(settings, item); err != nil {
+					err = markSchemaErrorIndex(err, i)
+					if !settings.multiError {
+						return err
+					}
+					if itemMe, ok := err.(MultiError); ok {
+						me = append(me, itemMe...)
+					} else {
+						me = append(me, err)
+					}
+				}
+			}
+		}
+	} else if itemSchemaRef := schema.Items; itemSchemaRef != nil {
 		itemSchema := itemSchemaRef.Value
 		if itemSchema == nil {
 			return foundUnresolvedRef(itemSchemaRef.Ref)
@@ -2754,9 +2801,13 @@ func (schema *Schema) visitJSONObject(settings *schemaValidationSettings, value 
 	sort.Strings(keys)
 	for _, k := range keys {
 		v := value[k]
+		matchedProperty := false
+		matchedPattern := false
+
 		if properties != nil {
 			propertyRef := properties[k]
 			if propertyRef != nil {
+				matchedProperty = true
 				p := propertyRef.Value
 				if p == nil {
 					return foundUnresolvedRef(propertyRef.Ref)
@@ -2771,13 +2822,54 @@ func (schema *Schema) visitJSONObject(settings *schemaValidationSettings, value 
 					}
 					if v, ok := err.(MultiError); ok {
 						me = append(me, v...)
-						continue
+					} else {
+						me = append(me, err)
 					}
-					me = append(me, err)
 				}
-				continue
 			}
 		}
+
+		if len(schema.PatternProperties) > 0 {
+			for pattern, ppRef := range schema.PatternProperties {
+				if ppRef == nil || ppRef.Value == nil {
+					continue
+				}
+				re, err := regexp.Compile(intoGoRegexp(pattern))
+				if err != nil {
+					if settings.patternValidationDisabled {
+						continue
+					}
+					return &SchemaError{
+						Schema:      schema,
+						SchemaField: "patternProperties",
+						Origin:      err,
+						Reason:      fmt.Sprintf("cannot compile pattern %q: %v", pattern, err),
+					}
+				}
+				if re.MatchString(k) {
+					matchedPattern = true
+					if err := ppRef.Value.visitJSON(settings, v); err != nil {
+						if settings.failfast {
+							return errSchema
+						}
+						err = markSchemaErrorKey(err, k)
+						if !settings.multiError {
+							return err
+						}
+						if v, ok := err.(MultiError); ok {
+							me = append(me, v...)
+						} else {
+							me = append(me, err)
+						}
+					}
+				}
+			}
+		}
+
+		if matchedProperty || matchedPattern {
+			continue
+		}
+
 		if allowed := schema.AdditionalProperties.Has; allowed == nil || *allowed {
 			if additionalProperties != nil {
 				if err := additionalProperties.visitJSON(settings, v); err != nil {
