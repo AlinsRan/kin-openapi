@@ -248,6 +248,15 @@ func (loader *Loader) ResolveRefsIn(doc *T, location *url.URL) (err error) {
 				return
 			}
 		}
+		for _, name := range componentNames(components.PathItems) {
+			pathItem := components.PathItems[name]
+			if pathItem == nil {
+				continue
+			}
+			if err = loader.resolvePathItemRef(doc, pathItem, location); err != nil {
+				return
+			}
+		}
 	}
 
 	// Visit all operations
