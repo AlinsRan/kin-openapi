@@ -382,6 +382,7 @@ type Components struct {
 	Examples        Examples        `json:"examples,omitempty" yaml:"examples,omitempty"`
 	Links           Links           `json:"links,omitempty" yaml:"links,omitempty"`
 	Callbacks       Callbacks       `json:"callbacks,omitempty" yaml:"callbacks,omitempty"`
+	PathItems       PathItems       `json:"pathItems,omitempty" yaml:"pathItems,omitempty"`
 }
     Components is specified by OpenAPI/Swagger standard version 3. See
     https://github.com/OAI/OpenAPI-Specification/blob/main/versions/3.0.3.md#components-object
@@ -1286,6 +1287,12 @@ func (pathItem *PathItem) UnmarshalJSON(data []byte) error
 
 func (pathItem *PathItem) Validate(ctx context.Context, opts ...ValidationOption) error
     Validate returns an error if PathItem does not comply with the OpenAPI spec.
+
+type PathItems map[string]*PathItem
+
+func (m PathItems) JSONLookup(token string) (any, error)
+    JSONLookup implements
+    https://pkg.go.dev/github.com/go-openapi/jsonpointer#JSONPointable
 
 type Paths struct {
 	Extensions map[string]any `json:"-" yaml:"-"`
