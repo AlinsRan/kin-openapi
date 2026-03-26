@@ -27,15 +27,16 @@ type Components struct {
 	Extensions map[string]any `json:"-" yaml:"-"`
 	Origin     *Origin        `json:"__origin__,omitempty" yaml:"__origin__,omitempty"`
 
-	Schemas         Schemas         `json:"schemas,omitempty" yaml:"schemas,omitempty"`
-	Parameters      ParametersMap   `json:"parameters,omitempty" yaml:"parameters,omitempty"`
-	Headers         Headers         `json:"headers,omitempty" yaml:"headers,omitempty"`
-	RequestBodies   RequestBodies   `json:"requestBodies,omitempty" yaml:"requestBodies,omitempty"`
-	Responses       ResponseBodies  `json:"responses,omitempty" yaml:"responses,omitempty"`
-	SecuritySchemes SecuritySchemes `json:"securitySchemes,omitempty" yaml:"securitySchemes,omitempty"`
-	Examples        Examples        `json:"examples,omitempty" yaml:"examples,omitempty"`
-	Links           Links           `json:"links,omitempty" yaml:"links,omitempty"`
-	Callbacks       Callbacks       `json:"callbacks,omitempty" yaml:"callbacks,omitempty"`
+	Schemas         Schemas              `json:"schemas,omitempty" yaml:"schemas,omitempty"`
+	Parameters      ParametersMap        `json:"parameters,omitempty" yaml:"parameters,omitempty"`
+	Headers         Headers              `json:"headers,omitempty" yaml:"headers,omitempty"`
+	RequestBodies   RequestBodies        `json:"requestBodies,omitempty" yaml:"requestBodies,omitempty"`
+	Responses       ResponseBodies       `json:"responses,omitempty" yaml:"responses,omitempty"`
+	SecuritySchemes SecuritySchemes      `json:"securitySchemes,omitempty" yaml:"securitySchemes,omitempty"`
+	Examples        Examples             `json:"examples,omitempty" yaml:"examples,omitempty"`
+	Links           Links                `json:"links,omitempty" yaml:"links,omitempty"`
+	Callbacks       Callbacks            `json:"callbacks,omitempty" yaml:"callbacks,omitempty"`
+	PathItems       map[string]*PathItem `json:"pathItems,omitempty" yaml:"pathItems,omitempty"`
 }
 
 func NewComponents() Components {
@@ -53,7 +54,7 @@ func (components Components) MarshalJSON() ([]byte, error) {
 
 // MarshalYAML returns the YAML encoding of Components.
 func (components Components) MarshalYAML() (any, error) {
-	m := make(map[string]any, 9+len(components.Extensions))
+	m := make(map[string]any, 10+len(components.Extensions))
 	for k, v := range components.Extensions {
 		m[k] = v
 	}
@@ -84,6 +85,9 @@ func (components Components) MarshalYAML() (any, error) {
 	if x := components.Callbacks; len(x) != 0 {
 		m["callbacks"] = x
 	}
+	if x := components.PathItems; len(x) != 0 {
+		m["pathItems"] = x
+	}
 	return m, nil
 }
 
@@ -105,6 +109,7 @@ func (components *Components) UnmarshalJSON(data []byte) error {
 	delete(x.Extensions, "examples")
 	delete(x.Extensions, "links")
 	delete(x.Extensions, "callbacks")
+	delete(x.Extensions, "pathItems")
 	if len(x.Extensions) == 0 {
 		x.Extensions = nil
 	}
@@ -248,6 +253,21 @@ func (components *Components) Validate(ctx context.Context, opts ...ValidationOp
 		}
 		if err = v.Validate(ctx); err != nil {
 			return fmt.Errorf("callback %q: %w", k, err)
+		}
+	}
+
+	pathItems := make([]string, 0, len(components.PathItems))
+	for name := range components.PathItems {
+		pathItems = append(pathItems, name)
+	}
+	sort.Strings(pathItems)
+	for _, k := range pathItems {
+		v := components.PathItems[k]
+		if err = ValidateIdentifier(k); err != nil {
+			return fmt.Errorf("pathItem %q: %w", k, err)
+		}
+		if err = v.Validate(ctx); err != nil {
+			return fmt.Errorf("pathItem %q: %w", k, err)
 		}
 	}
 
