@@ -496,8 +496,7 @@ func TestMigrationScenarios(t *testing.T) {
 		err := json.Unmarshal(spec30, &doc30)
 		require.NoError(t, err)
 
-		if doc30.IsOpenAPI3_1() {
-		}
+		require.False(t, doc30.IsOpenAPI3_1(), "3.0 document should not be detected as 3.1")
 
 		// Simulate loading 3.1 document
 		spec31 := []byte(`{"openapi":"3.1.0","info":{"title":"Test","version":"1.0.0"},"paths":{}}`)
@@ -505,10 +504,7 @@ func TestMigrationScenarios(t *testing.T) {
 		err = json.Unmarshal(spec31, &doc31)
 		require.NoError(t, err)
 
-		if doc31.IsOpenAPI3_1() {
-		}
-
-		// Cleanup
+		require.True(t, doc31.IsOpenAPI3_1(), "3.1 document should be detected as 3.1")
 	})
 }
 

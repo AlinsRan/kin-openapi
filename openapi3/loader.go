@@ -65,6 +65,8 @@ func (loader *Loader) resetVisitedPathItemRefs() {
 	loader.visitedRefs = make(map[string]struct{})
 	loader.visitedPath = nil
 	loader.backtrack = make(map[string][]func(value any))
+	loader.anchorIndex = nil
+	loader.dynamicAnchorIndex = nil
 }
 
 // LoadFromURI loads a spec from a remote URL
@@ -395,6 +397,12 @@ func (loader *Loader) resolveComponent(doc *T, ref string, path *url.URL, resolv
 			if schema, ok := loader.anchorIndex[fragment]; ok {
 				if sr, ok := resolved.(*SchemaRef); ok {
 					sr.Value = schema
+					pathRef := copyURI(componentPath)
+					if pathRef == nil {
+						pathRef = new(url.URL)
+					}
+					pathRef.Fragment = fragment
+					sr.setRefPath(pathRef)
 					return componentDoc, componentPath, nil
 				}
 			}

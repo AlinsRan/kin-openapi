@@ -54,10 +54,9 @@ func transformOpenAPIToJSONSchema(schema map[string]any) {
 		if typeVal, ok := schema["type"].(string); ok {
 			// Convert to type array with null (must be []any for jsonschema compiler)
 			schema["type"] = []any{typeVal, "null"}
-		} else if _, hasType := schema["type"]; !hasType {
-			// nullable: true without type - add "null" to allow null values
-			schema["type"] = []any{"null"}
 		}
+		// If no type is set, don't add a type constraint - nullable just means null is
+		// allowed alongside whatever values the schema permits (OpenAPI 3.0 semantics).
 		delete(schema, "nullable")
 	}
 

@@ -436,8 +436,8 @@ func TestOrigin_XML(t *testing.T) {
 		base.Origin.Fields["prefix"])
 }
 
-// TestOrigin_OriginExistsInProperties verifies that loading fails when a specification
-// contains a property named "__origin__", highlighting a limitation in the current implementation.
+// TestOrigin_ConstAndExamplesStripped verifies that the __origin__ key injected by the YAML
+// origin-tracking loader is stripped from Const and Examples fields during unmarshaling.
 func TestOrigin_ConstAndExamplesStripped(t *testing.T) {
 	var data = `
 openapi: "3.1.0"
@@ -474,6 +474,8 @@ components:
 	require.NotContains(t, exampleMap, originKey)
 }
 
+// TestOrigin_OriginExistsInProperties verifies that loading fails when a specification
+// contains a property named "__origin__", highlighting a limitation in the current implementation.
 func TestOrigin_OriginExistsInProperties(t *testing.T) {
 	var data = `
 paths:

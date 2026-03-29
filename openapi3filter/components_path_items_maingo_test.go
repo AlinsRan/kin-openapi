@@ -36,14 +36,15 @@ func TestComponentsPathItemsValidateRequestSimulateMainGo(t *testing.T) {
 	h := make(map[string]interface{})
 	err = json.Unmarshal([]byte(headersJSON), &h)
 	require.NoError(t, err)
-	headers := make(map[string][]string)
+	headers := make(http.Header)
 	for k, v := range h {
+		canonical := http.CanonicalHeaderKey(k)
 		switch val := v.(type) {
 		case string:
-			headers[k] = []string{val}
+			headers[canonical] = []string{val}
 		case []interface{}:
 			for _, item := range val {
-				headers[k] = append(headers[k], item.(string))
+				headers[canonical] = append(headers[canonical], item.(string))
 			}
 		}
 	}

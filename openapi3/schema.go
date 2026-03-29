@@ -413,9 +413,10 @@ func (addProps *AdditionalProperties) UnmarshalJSON(data []byte) error {
 	return nil
 }
 
-// ExclusiveBound represents exclusiveMinimum/exclusiveMaximum which changed type between OpenAPI versions.
-// In OpenAPI 3.0 (JSON Schema draft-04): boolean that modifies minimum/maximum
-// In OpenAPI 3.1 (JSON Schema 2020-12): number representing the actual exclusive bound
+// ExclusiveBound represents exclusiveMinimum/exclusiveMaximum which changed
+// type between OpenAPI versions.
+// In OpenAPI 3.0, it is a boolean modifier for minimum/maximum.
+// In OpenAPI 3.1 (JSON Schema 2020-12), it is a numeric exclusive bound.
 type ExclusiveBound struct {
 	Bool  *bool    // For OpenAPI 3.0 style (modifier for min/max)
 	Value *float64 // For OpenAPI 3.1 style (actual bound value)
@@ -449,7 +450,7 @@ func (eb ExclusiveBound) MarshalJSON() ([]byte, error) {
 		return nil, err
 	}
 	if x == nil {
-		return nil, nil
+		return []byte("null"), nil
 	}
 	return json.Marshal(x)
 }

@@ -11,7 +11,7 @@
 //   - JSON Schema dialect specification
 //   - SPDX license identifiers
 //
-// The implementation maintains 100% backward compatibility with OpenAPI 3.0.
+// The implementation is designed to preserve backward compatibility with OpenAPI 3.0.
 //
 // For OpenAPI 3.1 validation, use the JSON Schema 2020-12 validator option:
 //
