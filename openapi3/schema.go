@@ -623,8 +623,8 @@ func (schema Schema) MarshalYAML() (any, error) {
 	}
 
 	// OpenAPI 3.1 / JSON Schema 2020-12 fields
-	if x := schema.Const; x != nil {
-		m["const"] = x
+	if schema.ConstIsSet || schema.Const != nil {
+		m["const"] = schema.Const
 	}
 	if x := schema.Examples; len(x) != 0 {
 		m["examples"] = x
@@ -1318,7 +1318,7 @@ func (schema *Schema) IsEmpty() bool {
 		schema.MinItems != 0 || schema.MaxItems != nil ||
 		len(schema.Required) != 0 ||
 		schema.MinProps != 0 || schema.MaxProps != nil ||
-		schema.Const != nil {
+		schema.ConstIsSet || schema.Const != nil {
 		return false
 	}
 	if n := schema.Not; n != nil && n.Value != nil && !n.Value.IsEmpty() {
@@ -2651,8 +2651,11 @@ func (schema *Schema) visitJSONArray(settings *schemaValidationSettings, value [
 		for i, item := range value {
 			if i < prefixLen {
 				piRef := schema.PrefixItems[i]
-				if piRef == nil || piRef.Value == nil {
+				if piRef == nil {
 					continue
+				}
+				if piRef.Value == nil {
+					return foundUnresolvedRef(piRef.Ref)
 				}
 				if err := piRef.Value.visitJSON(settings, item); err != nil {
 					err = markSchemaErrorIndex(err, i)
@@ -2832,10 +2835,21 @@ func (schema *Schema) visitJSONObject(settings *schemaValidationSettings, value 
 
 		if len(schema.PatternProperties) > 0 {
 			for pattern, ppRef := range schema.PatternProperties {
-				if ppRef == nil || ppRef.Value == nil {
+				if ppRef == nil {
 					continue
 				}
-				re, err := regexp.Compile(intoGoRegexp(pattern))
+				if ppRef.Value == nil {
+					return foundUnresolvedRef(ppRef.Ref)
+				}
+				var (
+					re  RegexMatcher
+					err error
+				)
+				if settings.regexCompiler != nil {
+					re, err = settings.regexCompiler(pattern)
+				} else {
+					re, err = regexp.Compile(intoGoRegexp(pattern))
+				}
 				if err != nil {
 					if settings.patternValidationDisabled {
 						continue
