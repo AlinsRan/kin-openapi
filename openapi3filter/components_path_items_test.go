@@ -3,7 +3,6 @@ package openapi3filter_test
 import (
 	"bytes"
 	"context"
-	"fmt"
 	"net/http"
 	"testing"
 
@@ -109,5 +108,4 @@ func TestComponentsPathItemsResolution(t *testing.T) {
 	err = openapi3filter.ValidateRequest(context.Background(), input2)
 	require.Error(t, err, "invalid body (missing required 'name') should fail validation")
 	t.Logf("validation error (expected): %v", err)
-	fmt.Printf("Validation error detail: %v\n", err)
 }
