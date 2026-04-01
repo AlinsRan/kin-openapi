@@ -2848,7 +2848,13 @@ func (schema *Schema) visitJSONObject(settings *schemaValidationSettings, value 
 				if settings.regexCompiler != nil {
 					re, err = settings.regexCompiler(pattern)
 				} else {
-					re, err = regexp.Compile(intoGoRegexp(pattern))
+					cpiface, _ := compiledPatterns.Load(pattern)
+					re, _ = cpiface.(RegexMatcher)
+					if re == nil {
+						if re, err = regexp.Compile(intoGoRegexp(pattern)); err == nil {
+							compiledPatterns.Store(pattern, re)
+						}
+					}
 				}
 				if err != nil {
 					if settings.patternValidationDisabled {

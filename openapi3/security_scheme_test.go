@@ -228,15 +228,13 @@ func TestMutualTLSVersionGating(t *testing.T) {
 
 	t.Run("mutualTLS rejected without version context", func(t *testing.T) {
 		err := mutualTLSScheme.Validate(context.Background())
-		require.Error(t, err)
-		require.Contains(t, err.Error(), "mutualTLS")
+		require.ErrorContains(t, err, "mutualTLS")
 	})
 
 	t.Run("mutualTLS rejected in OpenAPI 3.0 context", func(t *testing.T) {
 		ctx := WithValidationOptions(context.Background()) // no setOpenAPI31
 		err := mutualTLSScheme.Validate(ctx)
-		require.Error(t, err)
-		require.Contains(t, err.Error(), "mutualTLS")
+		require.ErrorContains(t, err, "mutualTLS")
 	})
 
 	t.Run("mutualTLS accepted in OpenAPI 3.1 context", func(t *testing.T) {

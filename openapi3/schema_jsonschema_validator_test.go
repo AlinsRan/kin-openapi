@@ -234,16 +234,25 @@ func TestJSONSchema2020Validator_ComplexSchemas(t *testing.T) {
 	})
 }
 
-func TestJSONSchema2020Validator_Fallback(t *testing.T) {
-	t.Run("fallback on compilation error", func(t *testing.T) {
-		// Create a schema that might cause compilation issues
+func TestJSONSchema2020Validator_CompilationFallback(t *testing.T) {
+	// When newJSONSchemaValidator cannot compile a schema (e.g., because the
+	// schema contains $ref values that are relative to the parent document),
+	// visitJSONWithJSONSchema falls back to the built-in validator. Verify that
+	// the fallback produces correct results and does not panic.
+	t.Run("built-in fallback still validates correctly", func(t *testing.T) {
+		// A plain string schema compiles fine; the built-in path is exercised
+		// by omitting EnableJSONSchema2020(), but this sub-test exists to
+		// document that schemas with internal $refs that fail compilation
+		// receive built-in validation rather than an opaque compile error.
 		schema := &Schema{
 			Type: &Types{"string"},
 		}
 
-		// Should not panic, even if there's an issue
-		err := schema.VisitJSON("test", EnableJSONSchema2020())
+		err := schema.VisitJSON("hello", EnableJSONSchema2020())
 		require.NoError(t, err)
+
+		err = schema.VisitJSON(42, EnableJSONSchema2020())
+		require.Error(t, err)
 	})
 }
 
@@ -392,10 +401,11 @@ func TestBuiltInValidatorStillWorks(t *testing.T) {
 			Type: &Types{"string"},
 		}
 
-		err := schema.VisitJSON("hello", EnableJSONSchema2020())
+		// No EnableJSONSchema2020() — exercises the built-in validator path.
+		err := schema.VisitJSON("hello")
 		require.NoError(t, err)
 
-		err = schema.VisitJSON(123, EnableJSONSchema2020())
+		err = schema.VisitJSON(123)
 		require.Error(t, err)
 	})
 

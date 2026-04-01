@@ -289,6 +289,11 @@ func (doc *T) Validate(ctx context.Context, opts ...ValidationOption) error {
 		return wrap(errors.New("must be an object"))
 	}
 
+	// OpenAPI 3.1 requires at least one of: paths, webhooks, or components
+	if doc.IsOpenAPI3_1() && doc.Paths == nil && len(doc.Webhooks) == 0 && doc.Components == nil {
+		return errors.New("an OpenAPI 3.1 document must contain at least one of: paths, webhooks, or components")
+	}
+
 	wrap = func(e error) error { return fmt.Errorf("invalid security: %w", e) }
 	if v := doc.Security; v != nil {
 		if err := v.Validate(ctx); err != nil {

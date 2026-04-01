@@ -189,10 +189,16 @@ func formatValidationError(verr *jsonschema.ValidationError, parentPath string) 
 	}
 }
 
-// visitJSONWithJSONSchema validates using the JSON Schema 2020-12 validator
+// visitJSONWithJSONSchema validates using the JSON Schema 2020-12 validator.
+// If schema compilation fails (e.g., because the schema contains $ref values
+// that are relative to the parent document and cannot be resolved in the
+// standalone compilation context), it falls back to the built-in validator.
 func (schema *Schema) visitJSONWithJSONSchema(settings *schemaValidationSettings, value any) error {
 	validator, err := newJSONSchemaValidator(schema)
 	if err != nil {
+		// Fall back to built-in validator when the JSON Schema compiler cannot
+		// resolve document-relative $refs. This is expected for schemas that
+		// reference other components via #/components/... paths.
 		return schema.visitJSON(settings, value)
 	}
 

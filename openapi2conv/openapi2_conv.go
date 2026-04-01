@@ -883,8 +883,8 @@ func FromV3SchemaRef(schema *openapi3.SchemaRef, components *openapi3.Components
 				Enum:         schema.Value.Enum,
 				Minimum:      effectiveMin(schema.Value.Min, schema.Value.ExclusiveMin),
 				Maximum:      effectiveMax(schema.Value.Max, schema.Value.ExclusiveMax),
-				ExclusiveMin: exclusiveBoundToBool(schema.Value.ExclusiveMin),
-				ExclusiveMax: exclusiveBoundToBool(schema.Value.ExclusiveMax),
+				ExclusiveMin: exclusiveMinToBool(schema.Value.ExclusiveMin, schema.Value.Min),
+				ExclusiveMax: exclusiveMaxToBool(schema.Value.ExclusiveMax, schema.Value.Max),
 				MinLength:    schema.Value.MinLength,
 				MaxLength:    schema.Value.MaxLength,
 				Default:      schema.Value.Default,
@@ -911,8 +911,8 @@ func FromV3SchemaRef(schema *openapi3.SchemaRef, components *openapi3.Components
 		Example:              schema.Value.Example,
 		ExternalDocs:         schema.Value.ExternalDocs,
 		UniqueItems:          schema.Value.UniqueItems,
-		ExclusiveMin:         exclusiveBoundToBool(schema.Value.ExclusiveMin),
-		ExclusiveMax:         exclusiveBoundToBool(schema.Value.ExclusiveMax),
+		ExclusiveMin:         exclusiveMinToBool(schema.Value.ExclusiveMin, schema.Value.Min),
+		ExclusiveMax:         exclusiveMaxToBool(schema.Value.ExclusiveMax, schema.Value.Max),
 		ReadOnly:             schema.Value.ReadOnly,
 		WriteOnly:            schema.Value.WriteOnly,
 		AllowEmptyValue:      schema.Value.AllowEmptyValue,
@@ -1045,8 +1045,8 @@ func FromV3RequestBodyFormData(mediaType *openapi3.MediaType) openapi2.Parameter
 			In:           "formData",
 			Extensions:   stripNonExtensions(val.Extensions),
 			Enum:         val.Enum,
-			ExclusiveMin: exclusiveBoundToBool(val.ExclusiveMin),
-			ExclusiveMax: exclusiveBoundToBool(val.ExclusiveMax),
+			ExclusiveMin: exclusiveMinToBool(val.ExclusiveMin, val.Min),
+			ExclusiveMax: exclusiveMaxToBool(val.ExclusiveMax, val.Max),
 			MinLength:    val.MinLength,
 			MaxLength:    val.MaxLength,
 			Default:      val.Default,
@@ -1350,30 +1350,71 @@ func boolPtr(b bool) *bool {
 	return &b
 }
 
-// exclusiveBoundToBool converts an ExclusiveBound to a bool for OpenAPI 2.0 compatibility
-// In OpenAPI 2.0, exclusiveMinimum/exclusiveMaximum are boolean modifiers
-func exclusiveBoundToBool(eb openapi3.ExclusiveBound) bool {
+// exclusiveMinToBool returns true when the OAS 3.1 numeric exclusiveMinimum is
+// the strictly tighter lower-bound constraint compared to minimum.
+func exclusiveMinToBool(eb openapi3.ExclusiveBound, min *float64) bool {
 	if eb.Bool != nil {
 		return *eb.Bool
 	}
-	// If it's a number (OpenAPI 3.1 style), we return true to indicate exclusivity
-	return eb.Value != nil
+	if eb.Value == nil {
+		return false
+	}
+	// No inclusive minimum: use exclusive bound, set flag = true.
+	if min == nil {
+		return true
+	}
+	// Both present. OAS 3.1 means value >= min AND value > eb.Value.
+	// The binding constraint depends on which is tighter:
+	//   if eb.Value >= min, then value > eb.Value is tighter → exclusive=true, bound=eb.Value
+	//   if eb.Value < min,  then value >= min is tighter     → exclusive=false, bound=min
+	return *eb.Value >= *min
+}
+
+// exclusiveMaxToBool returns true when the OAS 3.1 numeric exclusiveMaximum is
+// the strictly tighter upper-bound constraint compared to maximum.
+func exclusiveMaxToBool(eb openapi3.ExclusiveBound, max *float64) bool {
+	if eb.Bool != nil {
+		return *eb.Bool
+	}
+	if eb.Value == nil {
+		return false
+	}
+	if max == nil {
+		return true
+	}
+	// eb.Value <= max means exclusive upper bound is tighter.
+	return *eb.Value <= *max
 }
 
 // effectiveMin returns the minimum value for OAS 2.0 conversion, considering ExclusiveBound.
 // In OAS 3.1, exclusiveMinimum is a number. In OAS 2.0, it must be in the minimum field.
+// When both minimum and a numeric exclusiveMinimum are present, the tighter bound is returned.
 func effectiveMin(min *float64, eb openapi3.ExclusiveBound) *float64 {
-	if min != nil {
+	if eb.Value == nil {
 		return min
 	}
-	// If OAS 3.1 style numeric exclusive bound with no minimum, use the bound value as minimum
-	return eb.Value
+	if min == nil {
+		return eb.Value
+	}
+	// Both present: the tighter (larger) lower bound wins.
+	if *eb.Value >= *min {
+		return eb.Value
+	}
+	return min
 }
 
 // effectiveMax returns the maximum value for OAS 2.0 conversion, considering ExclusiveBound.
+// When both maximum and a numeric exclusiveMaximum are present, the tighter bound is returned.
 func effectiveMax(max *float64, eb openapi3.ExclusiveBound) *float64 {
-	if max != nil {
+	if eb.Value == nil {
 		return max
 	}
-	return eb.Value
+	if max == nil {
+		return eb.Value
+	}
+	// Both present: the tighter (smaller) upper bound wins.
+	if *eb.Value <= *max {
+		return eb.Value
+	}
+	return max
 }

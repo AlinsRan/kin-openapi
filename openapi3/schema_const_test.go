@@ -46,13 +46,17 @@ func TestSchemaConst_BuiltInValidator(t *testing.T) {
 
 	t.Run("null const", func(t *testing.T) {
 		schema := &Schema{
-			Type:  &Types{"null"},
-			Const: nil,
+			Type:       &Types{"null"},
+			Const:      nil,
+			ConstIsSet: true,
 		}
 
-		// nil const means "not set", so this should pass as empty schema
+		// const: null — only nil is valid
 		err := schema.VisitJSON(nil)
 		require.NoError(t, err)
+
+		err = schema.VisitJSON("not null")
+		require.Error(t, err)
 	})
 
 	t.Run("object const", func(t *testing.T) {
