@@ -80,6 +80,18 @@ func TestSchemaConst_BuiltInValidator(t *testing.T) {
 		require.ErrorContains(t, err, "const")
 	})
 
+	t.Run("null const with explicit non-null type still rejects nil", func(t *testing.T) {
+		schema := &Schema{
+			Type:       &Types{"string"},
+			Const:      nil,
+			ConstIsSet: true,
+		}
+
+		err := schema.VisitJSON(nil)
+		require.Error(t, err)
+		require.ErrorContains(t, err, "nullable")
+	})
+
 	t.Run("object const", func(t *testing.T) {
 		schema := &Schema{
 			Const: map[string]any{"key": "value"},

@@ -2184,7 +2184,7 @@ func (schema *Schema) visitXOFOperations(settings *schemaValidationSettings, val
 // https://github.com/OAI/OpenAPI-Specification/blob/main/versions/3.0.3.md#data-types
 // https://github.com/OAI/OpenAPI-Specification/blob/main/versions/3.0.3.md#schema-object
 func (schema *Schema) visitJSONNull(settings *schemaValidationSettings) (err error) {
-	if schema.ConstIsSet && schema.Const == nil {
+	if schema.ConstIsSet && schema.Const == nil && schema.Type == nil && !schema.Nullable {
 		return
 	}
 	if schema.PermitsNull() {
