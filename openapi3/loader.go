@@ -201,6 +201,26 @@ func (loader *Loader) ResolveRefsIn(doc *T, location *url.URL) (err error) {
 		loader.resetVisitedPathItemRefs()
 	}
 
+	// Pre-populate anchorIndex from inline schema definitions before ref
+	// resolution begins, so that forward $anchor references (where the
+	// referencing schema is traversed before the defining schema in
+	// alphabetical order) can always be resolved.
+	if components := doc.Components; components != nil {
+		for _, name := range componentNames(components.Schemas) {
+			component := components.Schemas[name]
+			if component != nil && component.Value != nil && component.Value.Anchor != "" {
+				if loader.anchorIndex == nil {
+					loader.anchorIndex = make(map[string]*Schema)
+				}
+				// Only pre-index inline schemas (Ref == "") to avoid polluting
+				// with merged sibling-field copies.
+				if component.Ref == "" {
+					loader.anchorIndex[component.Value.Anchor] = component.Value
+				}
+			}
+		}
+	}
+
 	if components := doc.Components; components != nil {
 		for _, name := range componentNames(components.Headers) {
 			component := components.Headers[name]
@@ -978,10 +998,16 @@ func (loader *Loader) resolveSchemaRef(doc *T, component *SchemaRef, documentPat
 	}
 
 	if value.Anchor != "" {
-		if loader.anchorIndex == nil {
-			loader.anchorIndex = make(map[string]*Schema)
+		// Only index anchors when this schema is its canonical definition,
+		// not when it is a merged copy produced by sibling-field resolution
+		// (component.Ref != ""). Otherwise the index entry would be polluted
+		// with per-reference sibling overrides.
+		if component.Ref == "" {
+			if loader.anchorIndex == nil {
+				loader.anchorIndex = make(map[string]*Schema)
+			}
+			loader.anchorIndex[value.Anchor] = value
 		}
-		loader.anchorIndex[value.Anchor] = value
 	}
 
 	if value.DynamicAnchor != "" {
