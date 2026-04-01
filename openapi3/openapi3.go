@@ -254,7 +254,7 @@ func (doc *T) GetSchemaValidationOptions() []SchemaValidationOption {
 func (doc *T) Validate(ctx context.Context, opts ...ValidationOption) error {
 	// Auto-enable JSON Schema 2020-12 validation for OpenAPI 3.1 documents
 	if doc.IsOpenAPI3_1() {
-		opts = append([]ValidationOption{EnableJSONSchema2020Validation()}, opts...)
+		opts = append([]ValidationOption{EnableJSONSchema2020Validation(), setOpenAPI31()}, opts...)
 	}
 	ctx = WithValidationOptions(ctx, opts...)
 

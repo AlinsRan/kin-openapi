@@ -16,6 +16,7 @@ type ValidationOptions struct {
 	regexCompilerFunc                                RegexCompilerFunc
 	extraSiblingFieldsAllowed                        map[string]struct{}
 	jsonSchema2020ValidationEnabled                  bool // Enables JSON Schema 2020-12 compliant validation for OpenAPI 3.1
+	isOpenAPI31                                      bool // Set internally when validating an OpenAPI 3.1 document
 }
 
 type validationOptionsKey struct{}
@@ -148,4 +149,12 @@ func getValidationOptions(ctx context.Context) *ValidationOptions {
 		return options
 	}
 	return &ValidationOptions{}
+}
+
+// setOpenAPI31 is an internal ValidationOption that marks the validation context
+// as being for an OpenAPI 3.1 document. It is set automatically by T.Validate().
+func setOpenAPI31() ValidationOption {
+	return func(options *ValidationOptions) {
+		options.isOpenAPI31 = true
+	}
 }
