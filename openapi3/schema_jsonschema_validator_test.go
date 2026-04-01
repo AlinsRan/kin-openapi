@@ -395,6 +395,54 @@ func TestJSONSchema2020Validator_TransformRecursesInto31Fields(t *testing.T) {
 	})
 }
 
+func TestJSONSchemaValidatorSchemaErrorFields(t *testing.T) {
+	// When the JSON Schema 2020-12 validator produces a validation error,
+	// the resulting SchemaError must have Schema and Value populated so that:
+	// 1. SchemaError.Error() doesn't print "null" for schema/value details
+	// 2. customizeMessageError (user-supplied) is called and can use those fields.
+	t.Run("SchemaError.Schema is populated", func(t *testing.T) {
+		schema := &Schema{
+			Type: &Types{"string"},
+		}
+
+		err := schema.VisitJSON(42, EnableJSONSchema2020())
+		require.Error(t, err)
+
+		var schemaErr *SchemaError
+		require.ErrorAs(t, err, &schemaErr)
+		require.NotNil(t, schemaErr.Schema, "SchemaError.Schema must be set by JSON Schema validator")
+	})
+
+	t.Run("SchemaError.Value is populated", func(t *testing.T) {
+		schema := &Schema{
+			Type: &Types{"string"},
+		}
+
+		err := schema.VisitJSON(42, EnableJSONSchema2020())
+		require.Error(t, err)
+
+		var schemaErr *SchemaError
+		require.ErrorAs(t, err, &schemaErr)
+		require.Equal(t, 42, schemaErr.Value, "SchemaError.Value must be set by JSON Schema validator")
+	})
+
+	t.Run("customizeMessageError is called", func(t *testing.T) {
+		schema := &Schema{
+			Type: &Types{"string"},
+		}
+
+		called := false
+		customizer := SetSchemaErrorMessageCustomizer(func(err *SchemaError) string {
+			called = true
+			return "custom: " + err.Reason
+		})
+
+		err := schema.VisitJSON(42, EnableJSONSchema2020(), customizer)
+		require.Error(t, err)
+		require.True(t, called, "customizeMessageError must be invoked by JSON Schema validator errors")
+	})
+}
+
 func TestBuiltInValidatorStillWorks(t *testing.T) {
 	t.Run("string validation with built-in", func(t *testing.T) {
 		schema := &Schema{

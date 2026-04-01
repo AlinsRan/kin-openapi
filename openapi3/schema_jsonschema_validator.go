@@ -133,26 +133,31 @@ func transformOpenAPIToJSONSchema(schema map[string]any) {
 	}
 }
 
-// validate validates a value against the compiled JSON Schema
-func (v *jsonSchemaValidator) validate(value any) error {
+// validate validates a value against the compiled JSON Schema.
+// The original schema and settings are passed so that SchemaError instances
+// can be fully populated (Value, Schema, customizeMessageError).
+func (v *jsonSchemaValidator) validate(value any, schema *Schema, settings *schemaValidationSettings) error {
 	if err := v.schema.Validate(value); err != nil {
 		// Convert jsonschema error to SchemaError
-		return convertJSONSchemaError(err)
+		return convertJSONSchemaError(err, value, schema, settings)
 	}
 	return nil
 }
 
 // convertJSONSchemaError converts a jsonschema validation error to OpenAPI SchemaError format
-func convertJSONSchemaError(err error) error {
+func convertJSONSchemaError(err error, value any, schema *Schema, settings *schemaValidationSettings) error {
 	var validationErr *jsonschema.ValidationError
 	if errors.As(err, &validationErr) {
-		return formatValidationError(validationErr, "")
+		return formatValidationError(validationErr, "", value, schema, settings)
 	}
 	return err
 }
 
-// formatValidationError recursively formats validation errors
-func formatValidationError(verr *jsonschema.ValidationError, parentPath string) error {
+// formatValidationError recursively formats validation errors into SchemaError instances.
+// value and schema are attached to each leaf SchemaError so that SchemaError.Error()
+// can print schema/value details and so that customizeMessageError (user-supplied via
+// SetSchemaErrorMessageCustomizer) is called with a fully-populated SchemaError.
+func formatValidationError(verr *jsonschema.ValidationError, parentPath string, value any, schema *Schema, settings *schemaValidationSettings) error {
 	// Build the path from InstanceLocation slice
 	path := "/" + strings.Join(verr.InstanceLocation, "/")
 	if parentPath != "" && path != "/" {
@@ -172,21 +177,33 @@ func formatValidationError(verr *jsonschema.ValidationError, parentPath string) 
 	if len(verr.Causes) > 0 {
 		var subErrors MultiError
 		for _, cause := range verr.Causes {
-			if subErr := formatValidationError(cause, path); subErr != nil {
+			if subErr := formatValidationError(cause, path, value, schema, settings); subErr != nil {
 				subErrors = append(subErrors, subErr)
 			}
 		}
 		if len(subErrors) > 0 {
-			return &SchemaError{
+			se := &SchemaError{
+				Value:  value,
+				Schema: schema,
 				Reason: msg.String(),
 				Origin: fmt.Errorf("validation failed due to: %w", subErrors),
 			}
+			if settings != nil {
+				se.customizeMessageError = settings.customizeMessageError
+			}
+			return se
 		}
 	}
 
-	return &SchemaError{
+	se := &SchemaError{
+		Value:  value,
+		Schema: schema,
 		Reason: msg.String(),
 	}
+	if settings != nil {
+		se.customizeMessageError = settings.customizeMessageError
+	}
+	return se
 }
 
 // visitJSONWithJSONSchema validates using the JSON Schema 2020-12 validator.
@@ -202,5 +219,5 @@ func (schema *Schema) visitJSONWithJSONSchema(settings *schemaValidationSettings
 		return schema.visitJSON(settings, value)
 	}
 
-	return validator.validate(value)
+	return validator.validate(value, schema, settings)
 }
