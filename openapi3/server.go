@@ -122,6 +122,7 @@ func (server *Server) UnmarshalJSON(data []byte) error {
 	if len(x.Extensions) == 0 {
 		x.Extensions = nil
 	}
+	delete(x.Variables, originKey)
 	*server = Server(x)
 	return nil
 }

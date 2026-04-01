@@ -172,6 +172,11 @@ func (ss *SecurityScheme) Validate(ctx context.Context, opts ...ValidationOption
 		if ss.OpenIdConnectUrl == "" {
 			return fmt.Errorf("no OIDC URL found for openIdConnect security scheme %q", ss.Name)
 		}
+	case "mutualTLS":
+		// mutualTLS is only valid in OpenAPI 3.1+
+		if !getValidationOptions(ctx).isOpenAPI31 {
+			return fmt.Errorf("security scheme type 'mutualTLS' is only supported in OpenAPI 3.1 and above")
+		}
 	default:
 		return fmt.Errorf("security scheme 'type' can't be %q", ss.Type)
 	}

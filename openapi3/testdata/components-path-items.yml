@@ -1,0 +1,38 @@
+openapi: "3.1.0"
+info:
+  title: PathItems Test
+  version: "1"
+paths:
+  /things:
+    $ref: '#/components/pathItems/MyItem'
+components:
+  pathItems:
+    MyItem:
+      get:
+        summary: Get things
+        operationId: getThings
+        responses:
+          "200":
+            description: OK
+            content:
+              application/json:
+                schema:
+                  type: object
+                  properties:
+                    id:
+                      type: string
+      post:
+        summary: Create thing
+        operationId: createThing
+        requestBody:
+          required: true
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  name:
+                    type: string
+        responses:
+          "201":
+            description: Created

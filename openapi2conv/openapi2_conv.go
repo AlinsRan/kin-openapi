@@ -268,8 +268,8 @@ func ToV3Parameter(components *openapi3.Components, parameter *openapi2.Paramete
 			Enum:            parameter.Enum,
 			Min:             parameter.Minimum,
 			Max:             parameter.Maximum,
-			ExclusiveMin:    parameter.ExclusiveMin,
-			ExclusiveMax:    parameter.ExclusiveMax,
+			ExclusiveMin:    openapi3.ExclusiveBound{Bool: boolPtr(parameter.ExclusiveMin)},
+			ExclusiveMax:    openapi3.ExclusiveBound{Bool: boolPtr(parameter.ExclusiveMax)},
 			MinLength:       parameter.MinLength,
 			MaxLength:       parameter.MaxLength,
 			Default:         parameter.Default,
@@ -494,8 +494,8 @@ func ToV3SchemaRef(schema *openapi2.SchemaRef) *openapi3.SchemaRef {
 		Example:              schema.Value.Example,
 		ExternalDocs:         schema.Value.ExternalDocs,
 		UniqueItems:          schema.Value.UniqueItems,
-		ExclusiveMin:         schema.Value.ExclusiveMin,
-		ExclusiveMax:         schema.Value.ExclusiveMax,
+		ExclusiveMin:         openapi3.ExclusiveBound{Bool: boolPtr(schema.Value.ExclusiveMin)},
+		ExclusiveMax:         openapi3.ExclusiveBound{Bool: boolPtr(schema.Value.ExclusiveMax)},
 		ReadOnly:             schema.Value.ReadOnly,
 		WriteOnly:            schema.Value.WriteOnly,
 		AllowEmptyValue:      schema.Value.AllowEmptyValue,
@@ -881,10 +881,10 @@ func FromV3SchemaRef(schema *openapi3.SchemaRef, components *openapi3.Components
 				Description:  schema.Value.Description,
 				Type:         paramType,
 				Enum:         schema.Value.Enum,
-				Minimum:      schema.Value.Min,
-				Maximum:      schema.Value.Max,
-				ExclusiveMin: schema.Value.ExclusiveMin,
-				ExclusiveMax: schema.Value.ExclusiveMax,
+				Minimum:      effectiveMin(schema.Value.Min, schema.Value.ExclusiveMin),
+				Maximum:      effectiveMax(schema.Value.Max, schema.Value.ExclusiveMax),
+				ExclusiveMin: exclusiveMinToBool(schema.Value.ExclusiveMin, schema.Value.Min),
+				ExclusiveMax: exclusiveMaxToBool(schema.Value.ExclusiveMax, schema.Value.Max),
 				MinLength:    schema.Value.MinLength,
 				MaxLength:    schema.Value.MaxLength,
 				Default:      schema.Value.Default,
@@ -911,15 +911,15 @@ func FromV3SchemaRef(schema *openapi3.SchemaRef, components *openapi3.Components
 		Example:              schema.Value.Example,
 		ExternalDocs:         schema.Value.ExternalDocs,
 		UniqueItems:          schema.Value.UniqueItems,
-		ExclusiveMin:         schema.Value.ExclusiveMin,
-		ExclusiveMax:         schema.Value.ExclusiveMax,
+		ExclusiveMin:         exclusiveMinToBool(schema.Value.ExclusiveMin, schema.Value.Min),
+		ExclusiveMax:         exclusiveMaxToBool(schema.Value.ExclusiveMax, schema.Value.Max),
 		ReadOnly:             schema.Value.ReadOnly,
 		WriteOnly:            schema.Value.WriteOnly,
 		AllowEmptyValue:      schema.Value.AllowEmptyValue,
 		Deprecated:           schema.Value.Deprecated,
 		XML:                  schema.Value.XML,
-		Min:                  schema.Value.Min,
-		Max:                  schema.Value.Max,
+		Min:                  effectiveMin(schema.Value.Min, schema.Value.ExclusiveMin),
+		Max:                  effectiveMax(schema.Value.Max, schema.Value.ExclusiveMax),
 		MultipleOf:           schema.Value.MultipleOf,
 		MinLength:            schema.Value.MinLength,
 		MaxLength:            schema.Value.MaxLength,
@@ -1045,16 +1045,16 @@ func FromV3RequestBodyFormData(mediaType *openapi3.MediaType) openapi2.Parameter
 			In:           "formData",
 			Extensions:   stripNonExtensions(val.Extensions),
 			Enum:         val.Enum,
-			ExclusiveMin: val.ExclusiveMin,
-			ExclusiveMax: val.ExclusiveMax,
+			ExclusiveMin: exclusiveMinToBool(val.ExclusiveMin, val.Min),
+			ExclusiveMax: exclusiveMaxToBool(val.ExclusiveMax, val.Max),
 			MinLength:    val.MinLength,
 			MaxLength:    val.MaxLength,
 			Default:      val.Default,
 			Items:        v2Items,
 			MinItems:     val.MinItems,
 			MaxItems:     val.MaxItems,
-			Maximum:      val.Max,
-			Minimum:      val.Min,
+			Maximum:      effectiveMax(val.Max, val.ExclusiveMax),
+			Minimum:      effectiveMin(val.Min, val.ExclusiveMin),
 			Pattern:      val.Pattern,
 			// CollectionFormat: val.CollectionFormat,
 			// Format:          val.Format,
@@ -1340,4 +1340,81 @@ func addPathExtensions(doc2 *openapi2.T, path string, extensions map[string]any)
 		doc2.Paths[path] = pathItem
 	}
 	pathItem.Extensions = extensions
+}
+
+// boolPtr returns a pointer to a bool, or nil if the value is false (to avoid storing empty values)
+func boolPtr(b bool) *bool {
+	if !b {
+		return nil
+	}
+	return &b
+}
+
+// exclusiveMinToBool returns true when the OAS 3.1 numeric exclusiveMinimum is
+// the strictly tighter lower-bound constraint compared to minimum.
+func exclusiveMinToBool(eb openapi3.ExclusiveBound, min *float64) bool {
+	if eb.Bool != nil {
+		return *eb.Bool
+	}
+	if eb.Value == nil {
+		return false
+	}
+	// No inclusive minimum: use exclusive bound, set flag = true.
+	if min == nil {
+		return true
+	}
+	// Both present. OAS 3.1 means value >= min AND value > eb.Value.
+	// The binding constraint depends on which is tighter:
+	//   if eb.Value >= min, then value > eb.Value is tighter → exclusive=true, bound=eb.Value
+	//   if eb.Value < min,  then value >= min is tighter     → exclusive=false, bound=min
+	return *eb.Value >= *min
+}
+
+// exclusiveMaxToBool returns true when the OAS 3.1 numeric exclusiveMaximum is
+// the strictly tighter upper-bound constraint compared to maximum.
+func exclusiveMaxToBool(eb openapi3.ExclusiveBound, max *float64) bool {
+	if eb.Bool != nil {
+		return *eb.Bool
+	}
+	if eb.Value == nil {
+		return false
+	}
+	if max == nil {
+		return true
+	}
+	// eb.Value <= max means exclusive upper bound is tighter.
+	return *eb.Value <= *max
+}
+
+// effectiveMin returns the minimum value for OAS 2.0 conversion, considering ExclusiveBound.
+// In OAS 3.1, exclusiveMinimum is a number. In OAS 2.0, it must be in the minimum field.
+// When both minimum and a numeric exclusiveMinimum are present, the tighter bound is returned.
+func effectiveMin(min *float64, eb openapi3.ExclusiveBound) *float64 {
+	if eb.Value == nil {
+		return min
+	}
+	if min == nil {
+		return eb.Value
+	}
+	// Both present: the tighter (larger) lower bound wins.
+	if *eb.Value >= *min {
+		return eb.Value
+	}
+	return min
+}
+
+// effectiveMax returns the maximum value for OAS 2.0 conversion, considering ExclusiveBound.
+// When both maximum and a numeric exclusiveMaximum are present, the tighter bound is returned.
+func effectiveMax(max *float64, eb openapi3.ExclusiveBound) *float64 {
+	if eb.Value == nil {
+		return max
+	}
+	if max == nil {
+		return eb.Value
+	}
+	// Both present: the tighter (smaller) upper bound wins.
+	if *eb.Value <= *max {
+		return eb.Value
+	}
+	return max
 }

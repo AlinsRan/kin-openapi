@@ -218,3 +218,28 @@ var securitySchemeExamples = []securitySchemeExample{
 		valid: false,
 	},
 }
+
+// TestMutualTLSVersionGating verifies that mutualTLS security scheme type is
+// only accepted when validating an OpenAPI 3.1 document. When validated via
+// SecurityScheme.Validate() directly (no version context), or within a 3.0
+// document, it must return an error.
+func TestMutualTLSVersionGating(t *testing.T) {
+	mutualTLSScheme := &SecurityScheme{Type: "mutualTLS"}
+
+	t.Run("mutualTLS rejected without version context", func(t *testing.T) {
+		err := mutualTLSScheme.Validate(context.Background())
+		require.ErrorContains(t, err, "mutualTLS")
+	})
+
+	t.Run("mutualTLS rejected in OpenAPI 3.0 context", func(t *testing.T) {
+		ctx := WithValidationOptions(context.Background()) // no setOpenAPI31
+		err := mutualTLSScheme.Validate(ctx)
+		require.ErrorContains(t, err, "mutualTLS")
+	})
+
+	t.Run("mutualTLS accepted in OpenAPI 3.1 context", func(t *testing.T) {
+		ctx := WithValidationOptions(context.Background(), setOpenAPI31())
+		err := mutualTLSScheme.Validate(ctx)
+		require.NoError(t, err)
+	})
+}

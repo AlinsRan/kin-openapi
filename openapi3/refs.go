@@ -991,6 +991,9 @@ type SchemaRef struct {
 	Value *Schema
 	extra []string
 
+	// extraSibling stores the raw sibling keyword values alongside $ref (OpenAPI 3.1)
+	extraSibling map[string]any
+
 	refPath *url.URL
 }
 
@@ -1046,6 +1049,17 @@ func (x *SchemaRef) UnmarshalJSON(data []byte) error {
 				x.extra = append(x.extra, key)
 			}
 			sort.Strings(x.extra)
+
+			siblings := make(map[string]any)
+			for k, v := range extra {
+				if !strings.HasPrefix(k, "x-") {
+					siblings[k] = v
+				}
+			}
+			if len(siblings) != 0 {
+				x.extraSibling = siblings
+			}
+
 			for k := range extra {
 				if !strings.HasPrefix(k, "x-") {
 					delete(extra, k)
@@ -1093,7 +1107,9 @@ func (x *SchemaRef) Validate(ctx context.Context, opts ...ValidationOption) erro
 	}
 
 	if len(extras) != 0 {
-		return fmt.Errorf("extra sibling fields: %+v", extras)
+		if !getValidationOptions(ctx).jsonSchema2020ValidationEnabled {
+			return fmt.Errorf("extra sibling fields: %+v", extras)
+		}
 	}
 
 	if v := x.Value; v != nil {

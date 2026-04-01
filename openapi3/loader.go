@@ -48,6 +48,9 @@ type Loader struct {
 	visitedRefs map[string]struct{}
 	visitedPath []string
 	backtrack   map[string][]func(value any)
+
+	anchorIndex        map[string]*Schema
+	dynamicAnchorIndex map[string]*Schema
 }
 
 // NewLoader returns an empty Loader
@@ -62,6 +65,8 @@ func (loader *Loader) resetVisitedPathItemRefs() {
 	loader.visitedRefs = make(map[string]struct{})
 	loader.visitedPath = nil
 	loader.backtrack = make(map[string][]func(value any))
+	loader.anchorIndex = nil
+	loader.dynamicAnchorIndex = nil
 }
 
 // LoadFromURI loads a spec from a remote URL
@@ -196,6 +201,26 @@ func (loader *Loader) ResolveRefsIn(doc *T, location *url.URL) (err error) {
 		loader.resetVisitedPathItemRefs()
 	}
 
+	// Pre-populate anchorIndex from inline schema definitions before ref
+	// resolution begins, so that forward $anchor references (where the
+	// referencing schema is traversed before the defining schema in
+	// alphabetical order) can always be resolved.
+	if components := doc.Components; components != nil {
+		for _, name := range componentNames(components.Schemas) {
+			component := components.Schemas[name]
+			if component != nil && component.Value != nil && component.Value.Anchor != "" {
+				if loader.anchorIndex == nil {
+					loader.anchorIndex = make(map[string]*Schema)
+				}
+				// Only pre-index inline schemas (Ref == "") to avoid polluting
+				// with merged sibling-field copies.
+				if component.Ref == "" {
+					loader.anchorIndex[component.Value.Anchor] = component.Value
+				}
+			}
+		}
+	}
+
 	if components := doc.Components; components != nil {
 		for _, name := range componentNames(components.Headers) {
 			component := components.Headers[name]
@@ -245,12 +270,32 @@ func (loader *Loader) ResolveRefsIn(doc *T, location *url.URL) (err error) {
 				return
 			}
 		}
+		for _, name := range componentNames(components.PathItems) {
+			pathItem := components.PathItems[name]
+			if pathItem == nil {
+				continue
+			}
+			if err = loader.resolvePathItemRef(doc, pathItem, location); err != nil {
+				return
+			}
+		}
 	}
 
 	// Visit all operations
 	pathItems := doc.Paths.Map()
 	for _, name := range componentNames(pathItems) {
 		pathItem := pathItems[name]
+		if pathItem == nil {
+			continue
+		}
+		if err = loader.resolvePathItemRef(doc, pathItem, location); err != nil {
+			return
+		}
+	}
+
+	// Visit all webhooks (OpenAPI 3.1)
+	for _, name := range componentNames(doc.Webhooks) {
+		pathItem := doc.Webhooks[name]
 		if pathItem == nil {
 			continue
 		}
@@ -368,6 +413,20 @@ func (loader *Loader) resolveComponent(doc *T, ref string, path *url.URL, resolv
 		fragment = "/"
 	}
 	if fragment[0] != '/' {
+		if loader.anchorIndex != nil {
+			if schema, ok := loader.anchorIndex[fragment]; ok {
+				if sr, ok := resolved.(*SchemaRef); ok {
+					sr.Value = schema
+					pathRef := copyURI(componentPath)
+					if pathRef == nil {
+						pathRef = new(url.URL)
+					}
+					pathRef.Fragment = fragment
+					sr.setRefPath(pathRef)
+					return componentDoc, componentPath, nil
+				}
+			}
+		}
 		return nil, nil, fmt.Errorf("expected fragment prefix '#/' in URI %q", ref)
 	}
 
@@ -926,11 +985,36 @@ func (loader *Loader) resolveSchemaRef(doc *T, component *SchemaRef, documentPat
 			component.Value = resolved.Value
 			component.setRefPath(resolved.RefPath())
 		}
+
+		if siblings := component.extraSibling; len(siblings) > 0 && component.Value != nil && doc.IsOpenAPI3_1() {
+			component.Value = mergeSiblingFields(component.Value, siblings)
+		}
+
 		defer loader.unvisitRef(ref, component.Value)
 	}
 	value := component.Value
 	if value == nil {
 		return nil
+	}
+
+	if value.Anchor != "" {
+		// Only index anchors when this schema is its canonical definition,
+		// not when it is a merged copy produced by sibling-field resolution
+		// (component.Ref != ""). Otherwise the index entry would be polluted
+		// with per-reference sibling overrides.
+		if component.Ref == "" {
+			if loader.anchorIndex == nil {
+				loader.anchorIndex = make(map[string]*Schema)
+			}
+			loader.anchorIndex[value.Anchor] = value
+		}
+	}
+
+	if value.DynamicAnchor != "" {
+		if loader.dynamicAnchorIndex == nil {
+			loader.dynamicAnchorIndex = make(map[string]*Schema)
+		}
+		loader.dynamicAnchorIndex[value.DynamicAnchor] = value
 	}
 
 	// ResolveRefs referred schemas
@@ -986,7 +1070,114 @@ func (loader *Loader) resolveSchemaRef(doc *T, component *SchemaRef, documentPat
 			}
 		}
 	}
+
+	// OpenAPI 3.1 / JSON Schema 2020-12 fields
+	for _, v := range value.PrefixItems {
+		if err := loader.resolveSchemaRef(doc, v, documentPath, visited); err != nil {
+			return err
+		}
+	}
+	if v := value.Contains; v != nil {
+		if err := loader.resolveSchemaRef(doc, v, documentPath, visited); err != nil {
+			return err
+		}
+	}
+	for _, name := range componentNames(value.PatternProperties) {
+		v := value.PatternProperties[name]
+		if err := loader.resolveSchemaRef(doc, v, documentPath, visited); err != nil {
+			return err
+		}
+	}
+	for _, name := range componentNames(value.DependentSchemas) {
+		v := value.DependentSchemas[name]
+		if err := loader.resolveSchemaRef(doc, v, documentPath, visited); err != nil {
+			return err
+		}
+	}
+	for _, name := range componentNames(value.Defs) {
+		v := value.Defs[name]
+		if err := loader.resolveSchemaRef(doc, v, documentPath, visited); err != nil {
+			return err
+		}
+	}
+	if v := value.PropertyNames; v != nil {
+		if err := loader.resolveSchemaRef(doc, v, documentPath, visited); err != nil {
+			return err
+		}
+	}
+	if v := value.UnevaluatedItems; v != nil {
+		if err := loader.resolveSchemaRef(doc, v, documentPath, visited); err != nil {
+			return err
+		}
+	}
+	if v := value.UnevaluatedProperties; v != nil {
+		if err := loader.resolveSchemaRef(doc, v, documentPath, visited); err != nil {
+			return err
+		}
+	}
+	if v := value.If; v != nil {
+		if err := loader.resolveSchemaRef(doc, v, documentPath, visited); err != nil {
+			return err
+		}
+	}
+	if v := value.Then; v != nil {
+		if err := loader.resolveSchemaRef(doc, v, documentPath, visited); err != nil {
+			return err
+		}
+	}
+	if v := value.Else; v != nil {
+		if err := loader.resolveSchemaRef(doc, v, documentPath, visited); err != nil {
+			return err
+		}
+	}
+	if v := value.ContentSchema; v != nil {
+		if err := loader.resolveSchemaRef(doc, v, documentPath, visited); err != nil {
+			return err
+		}
+	}
+
 	return nil
+}
+
+func mergeSiblingFields(base *Schema, siblings map[string]any) *Schema {
+	merged := *base
+	for k, v := range siblings {
+		switch k {
+		case "description":
+			if s, ok := v.(string); ok {
+				merged.Description = s
+			}
+		case "title":
+			if s, ok := v.(string); ok {
+				merged.Title = s
+			}
+		case "default":
+			merged.Default = v
+		case "readOnly":
+			if b, ok := v.(bool); ok {
+				merged.ReadOnly = b
+			}
+		case "writeOnly":
+			if b, ok := v.(bool); ok {
+				merged.WriteOnly = b
+			}
+		case "deprecated":
+			if b, ok := v.(bool); ok {
+				merged.Deprecated = b
+			}
+		case "example":
+			merged.Example = v
+		case "examples":
+			if arr, ok := v.([]any); ok {
+				merged.Examples = arr
+			}
+		case "nullable":
+			if b, ok := v.(bool); ok {
+				merged.Nullable = b
+			}
+		}
+	}
+	return &merged
 }
 
 func (loader *Loader) resolveSecuritySchemeRef(doc *T, component *SecuritySchemeRef, documentPath *url.URL) (err error) {

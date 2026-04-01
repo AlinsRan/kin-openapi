@@ -15,6 +15,7 @@ type (
 	Headers         map[string]*HeaderRef
 	Links           map[string]*LinkRef
 	ParametersMap   map[string]*ParameterRef
+	PathItems       map[string]*PathItem
 	RequestBodies   map[string]*RequestBodyRef
 	ResponseBodies  map[string]*ResponseRef
 	Schemas         map[string]*SchemaRef
@@ -36,6 +37,7 @@ type Components struct {
 	Examples        Examples        `json:"examples,omitempty" yaml:"examples,omitempty"`
 	Links           Links           `json:"links,omitempty" yaml:"links,omitempty"`
 	Callbacks       Callbacks       `json:"callbacks,omitempty" yaml:"callbacks,omitempty"`
+	PathItems       PathItems       `json:"pathItems,omitempty" yaml:"pathItems,omitempty"`
 }
 
 func NewComponents() Components {
@@ -53,7 +55,7 @@ func (components Components) MarshalJSON() ([]byte, error) {
 
 // MarshalYAML returns the YAML encoding of Components.
 func (components Components) MarshalYAML() (any, error) {
-	m := make(map[string]any, 9+len(components.Extensions))
+	m := make(map[string]any, 10+len(components.Extensions))
 	for k, v := range components.Extensions {
 		m[k] = v
 	}
@@ -84,6 +86,9 @@ func (components Components) MarshalYAML() (any, error) {
 	if x := components.Callbacks; len(x) != 0 {
 		m["callbacks"] = x
 	}
+	if x := components.PathItems; len(x) != 0 {
+		m["pathItems"] = x
+	}
 	return m, nil
 }
 
@@ -105,6 +110,7 @@ func (components *Components) UnmarshalJSON(data []byte) error {
 	delete(x.Extensions, "examples")
 	delete(x.Extensions, "links")
 	delete(x.Extensions, "callbacks")
+	delete(x.Extensions, "pathItems")
 	if len(x.Extensions) == 0 {
 		x.Extensions = nil
 	}
@@ -251,6 +257,21 @@ func (components *Components) Validate(ctx context.Context, opts ...ValidationOp
 		}
 	}
 
+	pathItems := make([]string, 0, len(components.PathItems))
+	for name := range components.PathItems {
+		pathItems = append(pathItems, name)
+	}
+	sort.Strings(pathItems)
+	for _, k := range pathItems {
+		v := components.PathItems[k]
+		if err = ValidateIdentifier(k); err != nil {
+			return fmt.Errorf("pathItem %q: %w", k, err)
+		}
+		if err = v.Validate(ctx); err != nil {
+			return fmt.Errorf("pathItem %q: %w", k, err)
+		}
+	}
+
 	return validateExtensions(ctx, components.Extensions)
 }
 
@@ -368,5 +389,18 @@ func (m Callbacks) JSONLookup(token string) (any, error) {
 		return &Ref{Ref: ref}, nil
 	} else {
 		return v.Value, nil
+	}
+}
+
+var _ jsonpointer.JSONPointable = (*PathItems)(nil)
+
+// JSONLookup implements https://pkg.go.dev/github.com/go-openapi/jsonpointer#JSONPointable
+func (m PathItems) JSONLookup(token string) (any, error) {
+	if v, ok := m[token]; !ok || v == nil {
+		return nil, fmt.Errorf("no path item %q", token)
+	} else if ref := v.Ref; ref != "" {
+		return &Ref{Ref: ref}, nil
+	} else {
+		return v, nil
 	}
 }
