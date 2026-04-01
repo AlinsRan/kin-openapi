@@ -59,6 +59,27 @@ func TestSchemaConst_BuiltInValidator(t *testing.T) {
 		require.Error(t, err)
 	})
 
+	t.Run("null const without type permits nil in built-in validator", func(t *testing.T) {
+		schema := &Schema{
+			Const:      nil,
+			ConstIsSet: true,
+		}
+
+		err := schema.VisitJSON(nil)
+		require.NoError(t, err)
+	})
+
+	t.Run("null const without type rejects non-nil", func(t *testing.T) {
+		schema := &Schema{
+			Const:      nil,
+			ConstIsSet: true,
+		}
+
+		err := schema.VisitJSON("not null")
+		require.Error(t, err)
+		require.ErrorContains(t, err, "const")
+	})
+
 	t.Run("object const", func(t *testing.T) {
 		schema := &Schema{
 			Const: map[string]any{"key": "value"},
